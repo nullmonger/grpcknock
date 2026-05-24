@@ -1,0 +1,36 @@
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+      time: "06:00"
+    open-pull-requests-limit: 5
+    assignees:
+      - nerjs
+    labels:
+      - dependencies
+      - bot
+    groups:
+      rust-minor-patch:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      time: "06:00"
+    open-pull-requests-limit: 5
+    assignees:
+      - nerjs
+    labels:
+      - dependencies
+      - bot
+      - github-actions
+    groups:
+      gha-minor-patch:
+        update-types:
+          - minor
+          - patch

@@ -1,0 +1,37 @@
+name: Checks
+
+# Reusable gate: fmt, clippy and tests on the dev toolchain, auto-installed by
+# rustup from rust-toolchain.toml. Deleting that file silently falls back to
+# the runner's bundled Rust. Called by bump-and-release and the publish
+# workflows so nothing ships without passing checks, even if a tag points at a
+# commit that never went through the PR CI. Jobs run in parallel.
+#
+# This is a smoke gate on the dev toolchain only; the full version x distro
+# matrix runs in ci.yml on PRs.
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - run: cargo fmt --all --check
+
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --all-features
