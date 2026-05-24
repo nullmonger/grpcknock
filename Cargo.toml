@@ -1,6 +1,12 @@
 [package]
-name = "rust-template"
-version = "0.0.1"
+name = "grpcknock"
+version = "0.1.0"
 edition = "2024"
+description = "A small gRPC health check probe for containers and Kubernetes"
+repository = "https://github.com/nullmonger/grpcknock"
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+keywords = ["grpc", "healthcheck", "cli", "kubernetes", "probe"]
+categories = ["command-line-utilities"]
 
 [dependencies]

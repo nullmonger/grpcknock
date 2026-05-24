@@ -3,5 +3,5 @@
 version = 4
 
 [[package]]
-name = "rust-template"
-version = "0.0.1"
+name = "grpcknock"
+version = "0.1.0"
