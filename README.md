@@ -10,13 +10,10 @@ grpcknock is a Rust alternative to grpc-health-probe.
 ## Installation
 
 ```
-cargo install grpcknock
+cargo install --git https://github.com/nullmonger/grpcknock
 ```
 
 ## Status
 
 Early development, pre-release. The command-line interface is not stable yet.
 
-## License
-
-Dual-licensed under either MIT or Apache-2.0, at your option.
