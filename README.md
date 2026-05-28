@@ -1,11 +1,9 @@
 # grpcknock
 
-A small gRPC health check probe for the command line. It calls the standard
-`grpc.health.v1.Health/Check` method and reports the result through the process
-exit code, so it fits Kubernetes liveness and readiness probes and Docker
-HEALTHCHECK lines.
-
-grpcknock is a Rust alternative to grpc-health-probe.
+A small gRPC health check probe for the command line, a Rust alternative to
+grpc-health-probe. It calls the standard `grpc.health.v1.Health/Check` method
+and reports the result through the process exit code, so it fits Kubernetes
+liveness and readiness probes and Docker HEALTHCHECK lines.
 
 ## Installation
 
@@ -13,7 +11,7 @@ grpcknock is a Rust alternative to grpc-health-probe.
 cargo install --git https://github.com/nullmonger/grpcknock
 ```
 
-## Try it out locally
+## Local usage
 
 The repository ships a mock health server that registers a handful of service
 names with fixed statuses. Run it in one terminal:
@@ -22,8 +20,9 @@ names with fixed statuses. Run it in one terminal:
 cargo run --example mock_server
 ```
 
-The server listens on `127.0.0.1:50051`. Probe it from another terminal (use
-`cargo run --` instead of `grpcknock` when running from source):
+The server listens on `127.0.0.1:50051`; if that port is already in use,
+change the bind address in `examples/mock_server.rs`. Probe it from another
+terminal (use `cargo run --` instead of `grpcknock` when running from source):
 
 ```bash
 grpcknock --port 50051                            # 0  SERVING (overall)

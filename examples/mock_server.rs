@@ -17,7 +17,7 @@
 use tonic::transport::Server;
 use tonic_health::ServingStatus;
 
-#[tokio::main(flavor = "current_thread")]
+#[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = "127.0.0.1:50051".parse()?;
 

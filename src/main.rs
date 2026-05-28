@@ -59,8 +59,8 @@ enum ProbeError {
 }
 
 impl ProbeError {
-    // TODO: carve timeout out of Transport into exit code 4 once --timeout
-    // and --connect-timeout land.
+    // TODO: carve timeout into exit code 4 once --timeout and --connect-timeout
+    // land - both Transport (connect timeout) and Rpc (DEADLINE_EXCEEDED).
     /// Exit code for a failed probe.
     fn exit_code(&self) -> u8 {
         match self {
@@ -91,7 +91,7 @@ async fn run(cli: &Cli) -> Result<ServingStatus, ProbeError> {
     Ok(ServingStatus::try_from(status).unwrap_or(ServingStatus::Unknown))
 }
 
-#[tokio::main(flavor = "current_thread")]
+#[tokio::main]
 async fn main() -> ExitCode {
     let cli = Cli::parse();
     match run(&cli).await {
@@ -150,7 +150,8 @@ mod tests {
 
     #[test]
     fn transport_error_exits_one() {
-        let err = Endpoint::from_shared(String::new()).unwrap_err();
+        // Any transport error works; we only test the variant -> exit code mapping.
+        let err = Endpoint::from_shared("http://[".to_string()).unwrap_err();
         assert_eq!(ProbeError::Transport(err).exit_code(), 1);
     }
 
