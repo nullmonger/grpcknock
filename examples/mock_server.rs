@@ -22,7 +22,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = "127.0.0.1:50051".parse()?;
 
     let (reporter, health_service) = tonic_health::server::health_reporter();
-    reporter.set_service_status("", ServingStatus::Serving).await;
+    reporter
+        .set_service_status("", ServingStatus::Serving)
+        .await;
     reporter
         .set_service_status("demo.Serving", ServingStatus::Serving)
         .await;
