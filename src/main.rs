@@ -59,12 +59,13 @@ enum ProbeError {
 }
 
 impl ProbeError {
-    // TODO: split timeout into exit code 4 and bad-target into 2 once the
-    // timeout flags and target validation land; for now any failure is 1.
+    // TODO: carve timeout out of Transport into exit code 4 once --timeout
+    // and --connect-timeout land.
     /// Exit code for a failed probe.
     fn exit_code(&self) -> u8 {
         match self {
-            ProbeError::Transport(_) | ProbeError::Rpc(_) => 1,
+            ProbeError::Transport(_) => 1,
+            ProbeError::Rpc(_) => 2,
         }
     }
 }
@@ -145,6 +146,18 @@ mod tests {
         assert_eq!(status_exit_code(ServingStatus::NotServing), 3);
         assert_eq!(status_exit_code(ServingStatus::Unknown), 3);
         assert_eq!(status_exit_code(ServingStatus::ServiceUnknown), 3);
+    }
+
+    #[test]
+    fn transport_error_exits_one() {
+        let err = Endpoint::from_shared(String::new()).unwrap_err();
+        assert_eq!(ProbeError::Transport(err).exit_code(), 1);
+    }
+
+    #[test]
+    fn rpc_error_exits_two() {
+        let err = tonic::Status::internal("rpc failed");
+        assert_eq!(ProbeError::Rpc(err).exit_code(), 2);
     }
 
     // End-to-end: a real Health server reporting SERVING drives the whole
