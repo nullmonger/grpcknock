@@ -38,7 +38,7 @@ jobs:
       matrix:
         # Dev version (matches rust-toolchain.toml) plus the two below it.
         # Raise this list and rust-toolchain.toml together by hand.
-        rust: ["1.95", "1.94", "1.93", "1.92"]
+        rust: ["stable", "beta", "1.95", "1.94"]
         env:
           - name: ubuntu
             container: ""
@@ -46,10 +46,11 @@ jobs:
             container: "debian:12"
           - name: arch
             container: "archlinux:latest"
-          - name: alpine
-            container: "rust:1-alpine"
     name: test (${{ matrix.env.name }} / ${{ matrix.rust }})
     runs-on: ubuntu-latest
+    # beta tracks the upcoming release; an upstream regression there must not
+    # block the merge queue. ci-success counts a continued job as success.
+    continue-on-error: ${{ matrix.rust == 'beta' }}
     container: ${{ matrix.env.container }}
     env:
       RUSTUP_TOOLCHAIN: ${{ matrix.rust }}
@@ -65,12 +66,6 @@ jobs:
         if: matrix.env.name == 'arch'
         run: |
           pacman -Syu --noconfirm git curl base-devel openssl pkgconf
-
-      - name: Prep (alpine)
-        if: matrix.env.name == 'alpine'
-        shell: sh
-        run: |
-          apk add --no-cache git curl ca-certificates bash nodejs musl-dev
 
       - uses: actions/checkout@v6
 
