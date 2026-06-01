@@ -42,8 +42,6 @@ jobs:
         env:
           - name: ubuntu
             container: ""
-          - name: debian
-            container: "debian:12"
           - name: arch
             container: "archlinux:latest"
     name: test (${{ matrix.env.name }} / ${{ matrix.rust }})

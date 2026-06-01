@@ -6,10 +6,15 @@ use tonic_health::pb::HealthCheckRequest;
 use tonic_health::pb::health_check_response::ServingStatus;
 use tonic_health::pb::health_client::HealthClient;
 
+mod output;
+
+use output::{Outcome, OutputFormat, ProbeReport, render};
+
 /// gRPC health check probe.
 #[derive(Parser)]
 #[command(version, about)]
 #[command(group(ArgGroup::new("target").required(true).args(["addr", "port"])))]
+#[command(group(ArgGroup::new("output").args(["verbose", "json", "quiet"])))]
 struct Cli {
     /// Target address as host:port
     #[arg(long)]
@@ -24,6 +29,18 @@ struct Cli {
     /// Service name to check; omit to check overall server health
     #[arg(long)]
     service: Option<String>,
+
+    /// Print the status word alongside the exit code
+    #[arg(long, short = 'v')]
+    verbose: bool,
+
+    /// Print the result as a single JSON object
+    #[arg(long)]
+    json: bool,
+
+    /// Suppress output; rely on the exit code only
+    #[arg(long, short = 'q')]
+    quiet: bool,
 }
 
 impl Cli {
@@ -36,6 +53,20 @@ impl Cli {
             (Some(addr), _) => addr.clone(),
             (_, Some(port)) => format!("localhost:{port}"),
             (None, None) => unreachable!("clap requires one of --addr or --port"),
+        }
+    }
+
+    /// Output format chosen by the mutually exclusive `--verbose`/`--json`/`--quiet`
+    /// flags; the plain status line when none is set.
+    fn output_format(&self) -> OutputFormat {
+        if self.json {
+            OutputFormat::Json
+        } else if self.quiet {
+            OutputFormat::Quiet
+        } else if self.verbose {
+            OutputFormat::Verbose
+        } else {
+            OutputFormat::Default
         }
     }
 }
@@ -94,16 +125,24 @@ async fn run(cli: &Cli) -> Result<ServingStatus, ProbeError> {
 #[tokio::main]
 async fn main() -> ExitCode {
     let cli = Cli::parse();
-    match run(&cli).await {
-        Ok(status) => {
-            println!("status: {}", status.as_str_name());
-            ExitCode::from(status_exit_code(status))
-        }
-        Err(err) => {
-            eprintln!("{err}");
-            ExitCode::from(err.exit_code())
-        }
+    let outcome = match run(&cli).await {
+        Ok(status) => Outcome::Status(status),
+        Err(err) => Outcome::Error(err),
+    };
+    let report = ProbeReport {
+        endpoint: cli.target(),
+        service: cli.service.clone(),
+        outcome,
+    };
+
+    let rendered = render(&report, cli.output_format());
+    if let Some(out) = rendered.stdout {
+        println!("{out}");
     }
+    if let Some(err) = rendered.stderr {
+        eprintln!("{err}");
+    }
+    ExitCode::from(report.exit_code())
 }
 
 #[cfg(test)]
@@ -116,6 +155,9 @@ mod tests {
             addr: None,
             port: Some(50051),
             service: None,
+            verbose: false,
+            json: false,
+            quiet: false,
         };
         assert_eq!(cli.target(), "localhost:50051");
     }
@@ -126,6 +168,9 @@ mod tests {
             addr: Some("example.test:1234".into()),
             port: None,
             service: None,
+            verbose: false,
+            json: false,
+            quiet: false,
         };
         assert_eq!(cli.target(), "example.test:1234");
     }
@@ -161,6 +206,36 @@ mod tests {
         assert_eq!(ProbeError::Rpc(err).exit_code(), 2);
     }
 
+    #[test]
+    fn no_output_flag_selects_default() {
+        let cli = Cli::try_parse_from(["grpcknock", "--port", "1"]).unwrap();
+        assert_eq!(cli.output_format(), OutputFormat::Default);
+    }
+
+    #[test]
+    fn json_flag_selects_json() {
+        let cli = Cli::try_parse_from(["grpcknock", "--port", "1", "--json"]).unwrap();
+        assert_eq!(cli.output_format(), OutputFormat::Json);
+    }
+
+    #[test]
+    fn verbose_flag_selects_verbose() {
+        let cli = Cli::try_parse_from(["grpcknock", "--port", "1", "--verbose"]).unwrap();
+        assert_eq!(cli.output_format(), OutputFormat::Verbose);
+    }
+
+    #[test]
+    fn quiet_flag_selects_quiet() {
+        let cli = Cli::try_parse_from(["grpcknock", "--port", "1", "--quiet"]).unwrap();
+        assert_eq!(cli.output_format(), OutputFormat::Quiet);
+    }
+
+    #[test]
+    fn output_flags_are_mutually_exclusive() {
+        let result = Cli::try_parse_from(["grpcknock", "--port", "1", "--json", "--quiet"]);
+        assert!(result.is_err());
+    }
+
     // End-to-end: a real Health server reporting SERVING drives the whole
     // connect -> Check -> status path to a zero exit code.
     #[tokio::test]
@@ -189,6 +264,9 @@ mod tests {
             addr: Some(addr.to_string()),
             port: None,
             service: None,
+            verbose: false,
+            json: false,
+            quiet: false,
         };
         let status = run(&cli).await.expect("check should succeed");
         assert_eq!(status_exit_code(status), 0);
