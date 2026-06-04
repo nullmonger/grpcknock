@@ -2,7 +2,7 @@
 
 use tonic_health::pb::health_check_response::ServingStatus;
 
-use crate::{ProbeError, status_exit_code};
+use crate::probe::{ProbeError, status_exit_code};
 
 /// How a probe result is written out. The exit code does not depend on the
 /// format.
@@ -119,7 +119,7 @@ fn render_json(report: &ProbeReport) -> Rendered {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ProbeError;
+    use crate::probe::ProbeError;
     use tonic_health::pb::health_check_response::ServingStatus;
 
     fn report(outcome: Outcome) -> ProbeReport {
