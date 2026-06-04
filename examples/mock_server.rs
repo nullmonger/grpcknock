@@ -16,11 +16,36 @@
 //!
 //! cargo run -- --port 50051 --service demo.Flapping --watch   # live updates
 //! ```
+//!
+//! Incoming metadata key names are logged, so `--metadata key=value` can be
+//! seen reaching the server.
 
 use std::time::Duration;
 
+use tonic::metadata::KeyAndValueRef;
+use tonic::service::interceptor::InterceptedService;
 use tonic::transport::Server;
+use tonic::{Request, Status};
 use tonic_health::ServingStatus;
+
+/// Logs the names of the ascii metadata on each request so manual `--metadata`
+/// checks are visible, then passes the request through unchanged. Values are
+/// not logged: metadata often carries credentials, and this would set the
+/// pattern for copied code.
+fn log_metadata(request: Request<()>) -> Result<Request<()>, Status> {
+    let keys: Vec<&str> = request
+        .metadata()
+        .iter()
+        .filter_map(|entry| match entry {
+            KeyAndValueRef::Ascii(key, _) => Some(key.as_str()),
+            KeyAndValueRef::Binary(..) => None,
+        })
+        .collect();
+    if !keys.is_empty() {
+        println!("request metadata keys: {}", keys.join(", "));
+    }
+    Ok(request)
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -70,7 +95,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  demo.Flapping    -> toggles SERVING/NOT_SERVING every 3s (for --watch)");
 
     Server::builder()
-        .add_service(health_service)
+        .add_service(InterceptedService::new(health_service, log_metadata))
         .serve(addr)
         .await?;
 

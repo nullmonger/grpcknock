@@ -53,12 +53,25 @@ impl ProbeReport {
     }
 }
 
+/// Renders a whole run. One service keeps the flat single-result format that
+/// scripts already parse; several services list each one, and JSON becomes an
+/// array.
+pub(crate) fn render_run(reports: &[ProbeReport], format: OutputFormat) -> Rendered {
+    match reports {
+        [single] => render(single, format),
+        _ => render_many(reports, format),
+    }
+}
+
 /// Renders a probe result in the requested format.
 pub(crate) fn render(report: &ProbeReport, format: OutputFormat) -> Rendered {
     match format {
         OutputFormat::Default => render_default(report),
         OutputFormat::Verbose => render_verbose(report),
-        OutputFormat::Json => render_json(report),
+        OutputFormat::Json => Rendered {
+            stdout: Some(report_json(report).to_string()),
+            stderr: None,
+        },
         OutputFormat::Quiet => Rendered {
             stdout: None,
             stderr: None,
@@ -99,9 +112,10 @@ fn render_verbose(report: &ProbeReport) -> Rendered {
     }
 }
 
-/// JSON mode: one object on stdout, success and failure alike, so a parser
-/// always reads a single stream.
-fn render_json(report: &ProbeReport) -> Rendered {
+/// One report as a JSON object. Success and failure share the object shape so a
+/// parser reads the same fields either way; reused for the single-object and
+/// the multi-service array forms.
+fn report_json(report: &ProbeReport) -> serde_json::Value {
     let mut obj = serde_json::json!({
         "endpoint": report.endpoint,
         "service": report.service,
@@ -110,9 +124,46 @@ fn render_json(report: &ProbeReport) -> Rendered {
         Outcome::Status(status) => obj["status"] = serde_json::json!(status.as_str_name()),
         Outcome::Error(err) => obj["error"] = serde_json::json!(err.to_string()),
     }
+    obj
+}
+
+/// Renders several services at once. JSON is an array of per-service objects;
+/// the text modes list one line per service, statuses on stdout and errors on
+/// stderr, with verbose prefixing the shared endpoint once.
+fn render_many(reports: &[ProbeReport], format: OutputFormat) -> Rendered {
+    match format {
+        OutputFormat::Quiet => Rendered {
+            stdout: None,
+            stderr: None,
+        },
+        OutputFormat::Json => Rendered {
+            stdout: Some(
+                serde_json::Value::Array(reports.iter().map(report_json).collect()).to_string(),
+            ),
+            stderr: None,
+        },
+        OutputFormat::Default => render_many_lines(reports, false),
+        OutputFormat::Verbose => render_many_lines(reports, true),
+    }
+}
+
+/// Builds per-service lines for the text modes.
+fn render_many_lines(reports: &[ProbeReport], verbose: bool) -> Rendered {
+    let mut out = Vec::new();
+    let mut err = Vec::new();
+    if verbose && let Some(first) = reports.first() {
+        out.push(format!("endpoint: {}", first.endpoint));
+    }
+    for report in reports {
+        let label = report.service_label();
+        match &report.outcome {
+            Outcome::Status(status) => out.push(format!("{label}: {}", status.as_str_name())),
+            Outcome::Error(e) => err.push(format!("{label}: {e}")),
+        }
+    }
     Rendered {
-        stdout: Some(obj.to_string()),
-        stderr: None,
+        stdout: (!out.is_empty()).then(|| out.join("\n")),
+        stderr: (!err.is_empty()).then(|| err.join("\n")),
     }
 }
 
@@ -206,5 +257,61 @@ mod tests {
         );
         assert_eq!(r.stdout, None);
         assert_eq!(r.stderr, None);
+    }
+
+    fn service_report(name: &str, status: ServingStatus) -> ProbeReport {
+        ProbeReport {
+            endpoint: "host:1".to_string(),
+            service: Some(name.to_string()),
+            outcome: Outcome::Status(status),
+        }
+    }
+
+    #[test]
+    fn single_report_keeps_the_flat_format() {
+        // render_run with one service must match the stage-01 single object.
+        let reports = vec![service_report("demo.Serving", ServingStatus::Serving)];
+        let r = render_run(&reports, OutputFormat::Json);
+        let v: serde_json::Value = serde_json::from_str(&r.stdout.unwrap()).unwrap();
+        assert!(v.is_object());
+        assert_eq!(v["status"], "SERVING");
+    }
+
+    #[test]
+    fn many_default_lists_each_service() {
+        let reports = vec![
+            service_report("a", ServingStatus::Serving),
+            service_report("b", ServingStatus::NotServing),
+        ];
+        let r = render_run(&reports, OutputFormat::Default);
+        let out = r.stdout.unwrap();
+        assert!(out.contains("a: SERVING"));
+        assert!(out.contains("b: NOT_SERVING"));
+    }
+
+    #[test]
+    fn many_routes_errors_to_stderr() {
+        let reports = vec![
+            service_report("a", ServingStatus::Serving),
+            ProbeReport {
+                endpoint: "host:1".to_string(),
+                service: Some("b".to_string()),
+                outcome: Outcome::Error(ProbeError::Rpc(tonic::Status::not_found("x"))),
+            },
+        ];
+        let r = render_run(&reports, OutputFormat::Default);
+        assert!(r.stdout.unwrap().contains("a: SERVING"));
+        assert!(r.stderr.unwrap().contains("b: rpc error"));
+    }
+
+    #[test]
+    fn many_json_is_an_array() {
+        let reports = vec![
+            service_report("a", ServingStatus::Serving),
+            service_report("b", ServingStatus::NotServing),
+        ];
+        let r = render_run(&reports, OutputFormat::Json);
+        let v: serde_json::Value = serde_json::from_str(&r.stdout.unwrap()).unwrap();
+        assert_eq!(v.as_array().unwrap().len(), 2);
     }
 }

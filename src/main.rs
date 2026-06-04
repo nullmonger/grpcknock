@@ -10,13 +10,26 @@ mod probe;
 mod tls;
 
 use cli::Cli;
-use output::{Outcome, ProbeReport, Rendered, render};
-use probe::{ProbeError, ProbeParams, decode_status, open_watch, run, watch_exit_code};
+use output::{Outcome, ProbeReport, Rendered, render, render_run};
+use probe::{
+    ProbeError, ProbeParams, decode_status, open_watch, run, watch_exit_code, worst_exit_code,
+};
 
 #[tokio::main]
 async fn main() -> ExitCode {
     let cli = Cli::parse();
+    // Watch follows a single stream; several services would be ambiguous, so
+    // reject it loudly rather than silently picking one.
+    if cli.watch && cli.service.len() > 1 {
+        eprintln!("--watch follows a single service; remove the extra --service values");
+        return ExitCode::from(2);
+    }
     let params = cli.probe_params();
+    // Metadata commonly carries credentials; warn when it would travel in the
+    // clear so a token is not leaked over a plaintext connection unnoticed.
+    if !params.metadata.is_empty() && !params.tls_mode.is_enabled() {
+        eprintln!("warning: metadata is sent over an unencrypted connection; add --tls");
+    }
     let format = cli.output_format();
     let code = if cli.watch {
         run_watch(&params, format).await
@@ -26,24 +39,46 @@ async fn main() -> ExitCode {
     ExitCode::from(code)
 }
 
-/// Builds a report for the given outcome against the probed target.
+/// Builds a single-service report for the watch stream against the probed target.
 fn report(params: &ProbeParams, outcome: Outcome) -> ProbeReport {
+    let service = params.watch_service();
     ProbeReport {
         endpoint: params.target.to_string(),
-        service: params.service.clone(),
+        service: (!service.is_empty()).then_some(service),
         outcome,
     }
 }
 
-/// One-shot `Check`: probe once, report, and exit by the result.
+/// One-shot `Check` across every requested service: probe, report each, and
+/// exit by the worst outcome.
 async fn run_check(params: &ProbeParams, format: output::OutputFormat) -> u8 {
-    let outcome = match run(params).await {
-        Ok(status) => Outcome::Status(status),
-        Err(err) => Outcome::Error(err),
-    };
-    let report = report(params, outcome);
-    emit(render(&report, format));
-    report.exit_code()
+    match run(params).await {
+        Ok(results) => {
+            let reports: Vec<ProbeReport> = results
+                .into_iter()
+                .map(|r| ProbeReport {
+                    endpoint: params.target.to_string(),
+                    service: r.service,
+                    outcome: match r.result {
+                        Ok(status) => Outcome::Status(status),
+                        Err(err) => Outcome::Error(err),
+                    },
+                })
+                .collect();
+            emit(render_run(&reports, format));
+            worst_exit_code(reports.iter().map(ProbeReport::exit_code))
+        }
+        // A connect-level failure aborts the whole run: report it once.
+        Err(err) => {
+            let report = ProbeReport {
+                endpoint: params.target.to_string(),
+                service: None,
+                outcome: Outcome::Error(err),
+            };
+            emit(render(&report, format));
+            report.exit_code()
+        }
+    }
 }
 
 /// `Watch`: stream status updates, printing each, until the server closes the
@@ -65,6 +100,7 @@ async fn run_watch(params: &ProbeParams, format: output::OutputFormat) -> u8 {
     tokio::pin!(shutdown);
 
     let mut last: Option<ServingStatus> = None;
+    let mut consecutive_failures: u32 = 0;
     loop {
         tokio::select! {
             message = stream.message() => match message {
@@ -72,8 +108,16 @@ async fn run_watch(params: &ProbeParams, format: output::OutputFormat) -> u8 {
                     let status = decode_status(response.status);
                     last = Some(status);
                     emit(render(&report(params, Outcome::Status(status)), format));
-                    // TODO(stage 03): --watch-failures counts consecutive
-                    // non-serving updates here and exits early at the limit.
+                    // --watch-failures: stop after N non-serving updates in a
+                    // row; a return to SERVING clears the streak.
+                    if status == ServingStatus::Serving {
+                        consecutive_failures = 0;
+                    } else {
+                        consecutive_failures += 1;
+                        if params.watch_failures.is_some_and(|limit| consecutive_failures >= limit) {
+                            break;
+                        }
+                    }
                 }
                 Ok(None) => break, // server closed the stream
                 Err(status) => {
