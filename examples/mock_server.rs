@@ -1,8 +1,9 @@
 //! Mock health server for manual probing of the CLI.
 //!
-//! Listens on `127.0.0.1:50051`. Most service names hold a fixed status so that
-//! every exit code path can be exercised; `demo.Flapping` toggles between
-//! SERVING and NOT_SERVING every few seconds so `--watch` shows a live stream.
+//! Listens on `127.0.0.1:50051`.
+//! Most service names hold a fixed status so that every exit code path can be exercised;
+//! `demo.Flapping` toggles between SERVING and NOT_SERVING every few seconds
+//! so `--watch` shows a live stream.
 //!
 //! ```text
 //! cargo run --example mock_server
@@ -17,8 +18,8 @@
 //! cargo run -- --port 50051 --service demo.Flapping --watch   # live updates
 //! ```
 //!
-//! Incoming metadata key names are logged, so `--metadata key=value` can be
-//! seen reaching the server.
+//! Incoming metadata key names are logged,
+//! so `--metadata key=value` can be seen reaching the server.
 
 use std::time::Duration;
 
@@ -28,10 +29,10 @@ use tonic::transport::Server;
 use tonic::{Request, Status};
 use tonic_health::ServingStatus;
 
-/// Logs the names of the ascii metadata on each request so manual `--metadata`
-/// checks are visible, then passes the request through unchanged. Values are
-/// not logged: metadata often carries credentials, and this would set the
-/// pattern for copied code.
+/// Logs the names of the ascii metadata on each request
+/// so manual `--metadata` checks are visible, then passes the request through unchanged.
+/// Values are not logged: metadata often carries credentials,
+/// and this would set the pattern for copied code.
 fn log_metadata(request: Request<()>) -> Result<Request<()>, Status> {
     let keys: Vec<&str> = request
         .metadata()

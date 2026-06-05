@@ -18,11 +18,8 @@ use probe::{
 #[tokio::main]
 async fn main() -> ExitCode {
     let cli = Cli::parse();
-    // Watch follows a single stream; several services would be ambiguous, so
-    // reject it loudly rather than silently picking one.
-    if cli.watch && cli.service.len() > 1 {
-        eprintln!("--watch follows a single service; remove the extra --service values");
-        return ExitCode::from(2);
+    if let Err(err) = cli.validate() {
+        err.exit();
     }
     let params = cli.probe_params();
     // Metadata commonly carries credentials; warn when it would travel in the
@@ -49,8 +46,8 @@ fn report(params: &ProbeParams, outcome: Outcome) -> ProbeReport {
     }
 }
 
-/// One-shot `Check` across every requested service: probe, report each, and
-/// exit by the worst outcome.
+/// One-shot `Check` across every requested service:
+/// probe, report each, and exit by the worst outcome.
 async fn run_check(params: &ProbeParams, format: output::OutputFormat) -> u8 {
     match run(params).await {
         Ok(results) => {
@@ -81,10 +78,10 @@ async fn run_check(params: &ProbeParams, format: output::OutputFormat) -> u8 {
     }
 }
 
-/// `Watch`: stream status updates, printing each, until the server closes the
-/// stream or a shutdown signal arrives. Exits by the last status observed -
-/// "observed" means a status this loop actually read, so a shutdown signal
-/// finishes on the most recent printed status.
+/// `Watch`: stream status updates, printing each,
+/// until the server closes the stream or a shutdown signal arrives.
+/// Exits by the last status observed - "observed" means a status this loop actually read,
+/// so a shutdown signal finishes on the most recent printed status.
 async fn run_watch(params: &ProbeParams, format: output::OutputFormat) -> u8 {
     let mut stream = match open_watch(params).await {
         Ok(stream) => stream,
@@ -108,8 +105,8 @@ async fn run_watch(params: &ProbeParams, format: output::OutputFormat) -> u8 {
                     let status = decode_status(response.status);
                     last = Some(status);
                     emit(render(&report(params, Outcome::Status(status)), format));
-                    // --watch-failures: stop after N non-serving updates in a
-                    // row; a return to SERVING clears the streak.
+                    // --watch-failures: stop after N non-serving updates in a row;
+                    // a return to SERVING clears the streak.
                     if status == ServingStatus::Serving {
                         consecutive_failures = 0;
                     } else {

@@ -12,12 +12,12 @@ use tonic_health::pb::health_client::HealthClient;
 use crate::endpoint::Target;
 use crate::tls::{self, TlsError, TlsMode};
 
-/// Fixed pause between retry attempts. Kept constant so `--retry` behaviour is
-/// predictable rather than a backoff curve the caller has to reason about.
+/// Fixed pause between retry attempts. Kept constant so `--retry` behaviour is predictable
+/// rather than a backoff curve the caller has to reason about.
 const RETRY_DELAY: Duration = Duration::from_secs(1);
 
-/// Everything the transport needs to probe a target, assembled once from the
-/// CLI. Keeps `probe` independent of the argument parser.
+/// Everything the transport needs to probe a target,
+/// assembled once from the CLI. Keeps `probe` independent of the argument parser.
 pub(crate) struct ProbeParams {
     pub(crate) target: Target,
     pub(crate) tls_mode: TlsMode,
@@ -30,8 +30,8 @@ pub(crate) struct ProbeParams {
 }
 
 impl ProbeParams {
-    /// Services to check, one Health request each. An empty list means a single
-    /// overall-health probe (empty service name), matching the no-flag default.
+    /// Services to check, one Health request each. An empty list means
+    /// a single overall-health probe (empty service name), matching the no-flag default.
     fn service_list(&self) -> Vec<String> {
         if self.services.is_empty() {
             vec![String::new()]
@@ -46,8 +46,8 @@ impl ProbeParams {
     }
 }
 
-/// One gRPC metadata header attached to outgoing requests. Validated at parse
-/// time so request assembly never fails on a bad key or value.
+/// One gRPC metadata header attached to outgoing requests.
+/// Validated at parse time so request assembly never fails on a bad key or value.
 #[derive(Clone)]
 pub(crate) struct MetaPair {
     key: AsciiMetadataKey,
@@ -68,8 +68,8 @@ pub(crate) enum MetaParseError {
 }
 
 impl MetaPair {
-    /// Parses a `key=value` header. The value keeps everything after the first
-    /// `=`, so values may themselves contain `=`.
+    /// Parses a `key=value` header.
+    /// The value keeps everything after the first `=`, so values may themselves contain `=`.
     pub(crate) fn parse(raw: &str) -> Result<MetaPair, MetaParseError> {
         let (key, value) = raw
             .split_once('=')
@@ -114,9 +114,9 @@ pub(crate) fn status_exit_code(status: ServingStatus) -> u8 {
     }
 }
 
-/// Exit code for a finished watch, based on the last status seen. With no
-/// status observed at all (the stream closed or was interrupted before any
-/// update), the server was never confirmed healthy, so this is a failure.
+/// Exit code for a finished watch, based on the last status seen.
+/// With no status observed at all (the stream closed or was interrupted before any update),
+/// the server was never confirmed healthy, so this is a failure.
 pub(crate) fn watch_exit_code(last: Option<ServingStatus>) -> u8 {
     match last {
         Some(status) => status_exit_code(status),
@@ -126,8 +126,8 @@ pub(crate) fn watch_exit_code(last: Option<ServingStatus>) -> u8 {
 
 /// Severity rank of an exit code for worst-of aggregation across services.
 /// Higher wins: a total outage (connection) outranks a hung call (timeout),
-/// which outranks an invocation error, which outranks a valid not-serving
-/// answer, which outranks success.
+/// which outranks an invocation error, which outranks a valid not-serving answer,
+/// which outranks success.
 fn severity(code: u8) -> u8 {
     match code {
         0 => 0,
@@ -139,8 +139,8 @@ fn severity(code: u8) -> u8 {
     }
 }
 
-/// The exit code of the most severe outcome among several services. Empty input
-/// is success.
+/// The exit code of the most severe outcome among several services.
+/// Empty input is success.
 pub(crate) fn worst_exit_code(codes: impl IntoIterator<Item = u8>) -> u8 {
     codes
         .into_iter()
@@ -175,23 +175,22 @@ impl ProbeError {
     }
 }
 
-/// Whether a connect failure is worth retrying. A refused/reset connection or a
-/// connect timeout is transient (the server may still be coming up); a TLS
-/// failure or an rpc error is deterministic.
+/// Whether a connect failure is worth retrying.
+/// A refused/reset connection or a connect timeout is transient
+/// (the server may still be coming up); a TLS failure or an rpc error is deterministic.
 fn is_retryable(err: &ProbeError) -> bool {
     matches!(err, ProbeError::Transport(_) | ProbeError::ConnectTimeout)
 }
 
-/// The result of probing one service: the service name checked (None for the
-/// overall health) and either its status or the failure of that single call.
+/// The result of probing one service: the service name checked
+/// (None for the overall health) and either its status or the failure of that single call.
 pub(crate) struct ServiceResult {
     pub(crate) service: Option<String>,
     pub(crate) result: Result<ServingStatus, ProbeError>,
 }
 
-/// Runs `attempt` and retries it, up to `retries` times, while it fails with a
-/// retryable error. Generic over the attempt so the retry policy is unit
-/// testable without a live server.
+/// Runs `attempt` and retries it, up to `retries` times, while it fails with a retryable error.
+/// Generic over the attempt so the retry policy is unit testable without a live server.
 async fn retry_loop<F, Fut, T>(
     retries: u32,
     delay: Duration,
@@ -214,8 +213,8 @@ where
     }
 }
 
-/// Dials the target, applying TLS and the connect timeout, and returns a Health
-/// client. A connect timeout maps to its own error so it exits 4, not 1.
+/// Dials the target, applying TLS and the connect timeout,
+/// and returns a Health client. A connect timeout maps to its own error so it exits 4, not 1.
 async fn connect(params: &ProbeParams) -> Result<HealthClient<Channel>, ProbeError> {
     let endpoint = Endpoint::from_shared(params.target.uri(params.tls_mode.is_enabled()))
         .map_err(ProbeError::Transport)?;
@@ -231,14 +230,14 @@ async fn connect(params: &ProbeParams) -> Result<HealthClient<Channel>, ProbeErr
     Ok(HealthClient::new(channel))
 }
 
-/// Connects with retries. Only connection establishment is retried; once the
-/// channel is up, per-service calls are reported as they come.
+/// Connects with retries. Only connection establishment is retried;
+/// once the channel is up, per-service calls are reported as they come.
 async fn connect_with_retry(params: &ProbeParams) -> Result<HealthClient<Channel>, ProbeError> {
     retry_loop(params.retry, RETRY_DELAY, || connect(params)).await
 }
 
-/// Calls `grpc.health.v1.Health/Check` for one service, applying metadata and
-/// the per-request timeout. A request timeout maps to exit 4.
+/// Calls `grpc.health.v1.Health/Check` for one service,
+/// applying metadata and the per-request timeout. A request timeout maps to exit 4.
 async fn check_service(
     client: &mut HealthClient<Channel>,
     params: &ProbeParams,
@@ -260,8 +259,8 @@ async fn check_service(
 }
 
 /// Connects once and checks every requested service over the same channel.
-/// A connect failure aborts the whole run; per-service failures are captured
-/// individually so the worst outcome can set the exit code.
+/// A connect failure aborts the whole run;
+/// per-service failures are captured individually so the worst outcome can set the exit code.
 pub(crate) async fn run(params: &ProbeParams) -> Result<Vec<ServiceResult>, ProbeError> {
     let mut client = connect_with_retry(params).await?;
     let mut results = Vec::new();
@@ -357,8 +356,8 @@ mod tests {
 
     #[test]
     fn tls_error_exits_one() {
-        // A TLS setup failure (e.g. an unreadable CA file) is a connection-level
-        // failure, like a refused dial.
+        // A TLS setup failure (e.g. an unreadable CA file) is a connection-level failure,
+        // like a refused dial.
         let err = TlsError::ReadCa {
             path: "/nope.pem".to_string(),
             source: std::io::Error::from(std::io::ErrorKind::NotFound),
@@ -457,8 +456,8 @@ mod tests {
         ));
     }
 
-    // End-to-end: a real Health server reporting SERVING drives the whole
-    // connect -> Check -> status path to a zero exit code.
+    // End-to-end: a real Health server reporting SERVING
+    // drives the whole connect -> Check -> status path to a zero exit code.
     #[tokio::test]
     async fn check_against_serving_server() {
         use tokio::net::TcpListener;
@@ -494,8 +493,8 @@ mod tests {
         server.abort();
     }
 
-    // End-to-end: several services over one connection aggregate to the worst
-    // outcome (SERVING + NOT_SERVING -> exit 3).
+    // End-to-end: several services over one connection
+    // aggregate to the worst outcome (SERVING + NOT_SERVING -> exit 3).
     #[tokio::test]
     async fn check_aggregates_multiple_services() {
         use tokio::net::TcpListener;
@@ -543,8 +542,8 @@ mod tests {
         server.abort();
     }
 
-    // End-to-end: Health/Watch streams the current status, then each change the
-    // server reports.
+    // End-to-end: Health/Watch streams the current status,
+    // then each change the server reports.
     #[tokio::test]
     async fn watch_reflects_status_changes() {
         use tokio::net::TcpListener;

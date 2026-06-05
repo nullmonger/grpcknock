@@ -4,8 +4,8 @@ use tonic_health::pb::health_check_response::ServingStatus;
 
 use crate::probe::{ProbeError, status_exit_code};
 
-/// How a probe result is written out. The exit code does not depend on the
-/// format.
+/// How a probe result is written out.
+/// The exit code does not depend on the format.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum OutputFormat {
     /// Status word on success, error text on stderr (default).
@@ -18,8 +18,8 @@ pub(crate) enum OutputFormat {
     Quiet,
 }
 
-/// A single probe result: the endpoint dialed, the service checked, and the
-/// outcome.
+/// A single probe result: the endpoint dialed, the service checked,
+/// and the outcome.
 pub(crate) struct ProbeReport {
     pub(crate) endpoint: String,
     pub(crate) service: Option<String>,
@@ -53,9 +53,8 @@ impl ProbeReport {
     }
 }
 
-/// Renders a whole run. One service keeps the flat single-result format that
-/// scripts already parse; several services list each one, and JSON becomes an
-/// array.
+/// Renders a whole run. One service keeps the flat single-result format that scripts already parse;
+/// several services list each one, and JSON becomes an array.
 pub(crate) fn render_run(reports: &[ProbeReport], format: OutputFormat) -> Rendered {
     match reports {
         [single] => render(single, format),
@@ -112,9 +111,9 @@ fn render_verbose(report: &ProbeReport) -> Rendered {
     }
 }
 
-/// One report as a JSON object. Success and failure share the object shape so a
-/// parser reads the same fields either way; reused for the single-object and
-/// the multi-service array forms.
+/// One report as a JSON object. Success and failure share the object shape
+/// so a parser reads the same fields either way;
+/// reused for the single-object and the multi-service array forms.
 fn report_json(report: &ProbeReport) -> serde_json::Value {
     let mut obj = serde_json::json!({
         "endpoint": report.endpoint,
@@ -128,8 +127,8 @@ fn report_json(report: &ProbeReport) -> serde_json::Value {
 }
 
 /// Renders several services at once. JSON is an array of per-service objects;
-/// the text modes list one line per service, statuses on stdout and errors on
-/// stderr, with verbose prefixing the shared endpoint once.
+/// the text modes list one line per service,
+/// statuses on stdout and errors on stderr, with verbose prefixing the shared endpoint once.
 fn render_many(reports: &[ProbeReport], format: OutputFormat) -> Rendered {
     match format {
         OutputFormat::Quiet => Rendered {
@@ -269,7 +268,8 @@ mod tests {
 
     #[test]
     fn single_report_keeps_the_flat_format() {
-        // render_run with one service must match the stage-01 single object.
+        // One service yields a flat object, not an array,
+        // so a simple consumer can read .status directly.
         let reports = vec![service_report("demo.Serving", ServingStatus::Serving)];
         let r = render_run(&reports, OutputFormat::Json);
         let v: serde_json::Value = serde_json::from_str(&r.stdout.unwrap()).unwrap();

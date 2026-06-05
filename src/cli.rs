@@ -3,7 +3,8 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use clap::{ArgGroup, Parser};
+use clap::error::ErrorKind;
+use clap::{ArgGroup, CommandFactory, Parser};
 
 use crate::endpoint::Target;
 use crate::output::OutputFormat;
@@ -78,14 +79,26 @@ pub(crate) struct Cli {
 }
 
 impl Cli {
-    /// Resolves the endpoint to dial from `--addr` or `--port`. `--addr` is
-    /// already validated into a [`Target`] during parsing.
+    /// Resolves the endpoint to dial from `--addr` or `--port`.
+    /// `--addr` is already validated into a [`Target`] during parsing.
     pub(crate) fn target(&self) -> Target {
         match (&self.addr, self.port) {
             (Some(addr), _) => addr.clone(),
             (_, Some(port)) => Target::localhost(port),
             (None, None) => unreachable!("clap requires one of --addr or --port"),
         }
+    }
+
+    /// Cross-flag rules clap cannot express declaratively. `--watch` follows a single stream,
+    /// so more than one `--service` is ambiguous: reject it rather than silently picking one.
+    pub(crate) fn validate(&self) -> Result<(), clap::Error> {
+        if self.watch && self.service.len() > 1 {
+            return Err(Self::command().error(
+                ErrorKind::ArgumentConflict,
+                "--watch follows a single service; remove the extra --service values",
+            ));
+        }
+        Ok(())
     }
 
     /// Assembles the transport parameters for a probe from the parsed flags.
@@ -102,8 +115,8 @@ impl Cli {
         }
     }
 
-    /// TLS setup from the flags. `--ca-cert` and `--tls-no-verify` both imply
-    /// TLS; the parser rejects their combination.
+    /// TLS setup from the flags.
+    /// `--ca-cert` and `--tls-no-verify` both imply TLS; the parser rejects their combination.
     pub(crate) fn tls_mode(&self) -> TlsMode {
         if self.tls_no_verify {
             TlsMode::NoVerify
@@ -116,8 +129,8 @@ impl Cli {
         }
     }
 
-    /// Output format chosen by the mutually exclusive `--verbose`/`--json`/`--quiet`
-    /// flags; the plain status line when none is set.
+    /// Output format chosen by the mutually exclusive `--verbose`/`--json`/`--quiet` flags;
+    /// the plain status line when none is set.
     pub(crate) fn output_format(&self) -> OutputFormat {
         if self.json {
             OutputFormat::Json
@@ -148,10 +161,11 @@ pub(crate) enum DurationParseError {
     Zero(String),
 }
 
-/// Parses a duration like `500ms`, `2s` or `1m`. A unit is required, matching
-/// grpc-health-probe's Go-style durations; bare numbers are rejected so the
-/// time scale is never ambiguous. Zero is rejected because a zero timeout fires
-/// instantly - "no timeout" is expressed by omitting the flag.
+/// Parses a duration like `500ms`, `2s` or `1m`. A unit is required,
+/// matching grpc-health-probe's Go-style durations;
+/// bare numbers are rejected so the time scale is never ambiguous.
+/// Zero is rejected because a zero timeout fires instantly -
+/// "no timeout" is expressed by omitting the flag.
 fn parse_duration(raw: &str) -> Result<Duration, DurationParseError> {
     let split = raw
         .find(|c: char| !c.is_ascii_digit())
@@ -365,5 +379,28 @@ mod tests {
     fn watch_failures_rejects_zero() {
         let result = Cli::try_parse_from(["grpcknock", "--port", "1", "--watch-failures", "0"]);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn watch_with_several_services_is_rejected() {
+        let cli = Cli::try_parse_from([
+            "grpcknock",
+            "--port",
+            "1",
+            "--watch",
+            "--service",
+            "a",
+            "--service",
+            "b",
+        ])
+        .unwrap();
+        assert!(cli.validate().is_err());
+    }
+
+    #[test]
+    fn watch_with_one_service_is_allowed() {
+        let cli =
+            Cli::try_parse_from(["grpcknock", "--port", "1", "--watch", "--service", "a"]).unwrap();
+        assert!(cli.validate().is_ok());
     }
 }

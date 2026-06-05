@@ -34,11 +34,11 @@ pub(crate) enum AddrError {
 }
 
 impl Target {
-    /// Parses an `--addr` value of the form `host:port`. IPv6 literals must be
-    /// wrapped in brackets, e.g. `[::1]:50051`.
+    /// Parses an `--addr` value of the form `host:port`.
+    /// IPv6 literals must be wrapped in brackets, e.g. `[::1]:50051`.
     pub(crate) fn parse_addr(addr: &str) -> Result<Target, AddrError> {
-        // IPv6 literals carry their own colons, so the bracketed form is split
-        // on the closing ']' before looking for the port separator.
+        // IPv6 literals carry their own colons,
+        // so the bracketed form is split on the closing ']' before looking for the port separator.
         let (host, port_str) = if let Some(rest) = addr.strip_prefix('[') {
             let end = rest
                 .find(']')
@@ -85,8 +85,8 @@ impl Target {
         &self.host
     }
 
-    /// The URI to dial: `http://host:port`, or `https://` when TLS is on. IPv6
-    /// hosts are bracketed.
+    /// The URI to dial: `http://host:port`, or `https://` when TLS is on.
+    /// IPv6 hosts are bracketed.
     pub(crate) fn uri(&self, tls: bool) -> String {
         let scheme = if tls { "https" } else { "http" };
         // A host containing ':' is an IPv6 literal and must be bracketed in a URI.
@@ -119,8 +119,9 @@ mod tests {
 
     #[test]
     fn rejects_unbracketed_ipv6() {
-        // A bare IPv6 literal is ambiguous: rsplit on ':' would silently take
-        // the last group as the port. It must be bracketed instead.
+        // A bare IPv6 literal is ambiguous:
+        // rsplit on ':' would silently take the last group as the port.
+        // It must be bracketed instead.
         assert!(matches!(
             Target::parse_addr("2001:db8::1:50051"),
             Err(AddrError::UnbracketedIpv6(_))

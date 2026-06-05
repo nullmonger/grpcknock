@@ -1,5 +1,5 @@
-//! TLS configuration: turning the `--tls` / `--ca-cert` / `--tls-no-verify`
-//! flags into a transport setup for the channel.
+//! TLS configuration: turning the `--tls` / `--ca-cert` / `--tls-no-verify` flags
+//! into a transport setup for the channel.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -78,9 +78,9 @@ pub(crate) fn configure(
     }
 }
 
-/// A server certificate verifier that accepts any certificate. Used only for
-/// `--tls-no-verify`, which the help text marks as dangerous: it removes all
-/// protection against man-in-the-middle attacks.
+/// A server certificate verifier that accepts any certificate.
+/// Used only for `--tls-no-verify`, which the help text marks as dangerous:
+/// it removes all protection against man-in-the-middle attacks.
 #[derive(Debug)]
 struct NoVerify;
 
