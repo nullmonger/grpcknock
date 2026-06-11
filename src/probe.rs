@@ -100,12 +100,12 @@ fn apply_metadata<T>(request: &mut tonic::Request<T>, pairs: &[MetaPair]) {
     }
 }
 
-/// Decodes a wire status code, treating an out-of-range value as not serving.
+/// Decodes a wire status code, treating an out-of-range value as UNKNOWN.
 pub(crate) fn decode_status(raw: i32) -> ServingStatus {
     ServingStatus::try_from(raw).unwrap_or(ServingStatus::Unknown)
 }
 
-/// Maps a serving status to a process exit code, following grpc-health-probe:
+/// Maps a serving status to a process exit code:
 /// SERVING is healthy, anything else is a failure.
 pub(crate) fn status_exit_code(status: ServingStatus) -> u8 {
     match status {
@@ -178,6 +178,9 @@ impl ProbeError {
 /// Whether a connect failure is worth retrying.
 /// A refused/reset connection or a connect timeout is transient
 /// (the server may still be coming up); a TLS failure or an rpc error is deterministic.
+// FIXME: a TLS handshake failure (bad certificate, hostname mismatch)
+// surfaces from connect() as ProbeError::Transport and is retried
+// even though it is deterministic; only CA config errors map to ProbeError::Tls.
 fn is_retryable(err: &ProbeError) -> bool {
     matches!(err, ProbeError::Transport(_) | ProbeError::ConnectTimeout)
 }

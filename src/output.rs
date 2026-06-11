@@ -39,7 +39,7 @@ pub(crate) struct Rendered {
 }
 
 impl ProbeReport {
-    /// Process exit code for this result, following grpc-health-probe.
+    /// Process exit code for this result.
     pub(crate) fn exit_code(&self) -> u8 {
         match &self.outcome {
             Outcome::Status(status) => status_exit_code(*status),

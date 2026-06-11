@@ -21,7 +21,7 @@ pub(crate) struct Cli {
     #[arg(long, value_parser = Target::parse_addr)]
     pub(crate) addr: Option<Target>,
 
-    /// Shortcut for localhost:<port>
+    /// Shortcut for localhost:PORT
     #[arg(long)]
     pub(crate) port: Option<u16>,
 
@@ -46,10 +46,10 @@ pub(crate) struct Cli {
     pub(crate) timeout: Option<Duration>,
 
     /// In --watch mode, exit after N consecutive non-serving updates
-    #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
+    #[arg(long, requires = "watch", value_parser = clap::value_parser!(u32).range(1..))]
     pub(crate) watch_failures: Option<u32>,
 
-    /// Print the status word alongside the exit code
+    /// Print the endpoint and service alongside the status
     #[arg(long, short = 'v')]
     pub(crate) verbose: bool,
 
@@ -377,7 +377,21 @@ mod tests {
 
     #[test]
     fn watch_failures_rejects_zero() {
-        let result = Cli::try_parse_from(["grpcknock", "--port", "1", "--watch-failures", "0"]);
+        let result = Cli::try_parse_from([
+            "grpcknock",
+            "--port",
+            "1",
+            "--watch",
+            "--watch-failures",
+            "0",
+        ]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn watch_failures_requires_watch() {
+        // Without this pairing the flag would be accepted and silently ignored.
+        let result = Cli::try_parse_from(["grpcknock", "--port", "1", "--watch-failures", "3"]);
         assert!(result.is_err());
     }
 

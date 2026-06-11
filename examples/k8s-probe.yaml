@@ -1,0 +1,35 @@
+# Demonstrates grpcknock as a Kubernetes exec probe.
+#
+# The container image must ship the grpcknock binary alongside the service;
+# examples/Dockerfile shows how to build such an image.
+#
+#   kubectl apply --dry-run=client -f examples/k8s-probe.yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: grpcknock-demo
+spec:
+  containers:
+    - name: app
+      # Build from examples/Dockerfile and push to your registry.
+      image: grpcknock-demo:latest
+      # Readiness gates traffic on the specific service. timeoutSeconds
+      # leaves headroom over the probe's own budget (1s + 2s) so a timeout
+      # exits as code 4 instead of being killed by the kubelet.
+      readinessProbe:
+        exec:
+          command: ["grpcknock", "--addr", "127.0.0.1:50051", "--service", "demo.Serving",
+                    "--connect-timeout", "1s", "--timeout", "2s"]
+        initialDelaySeconds: 2
+        periodSeconds: 5
+        timeoutSeconds: 4
+      # Liveness checks overall health only: a per-service probe would
+      # restart the container whenever that service reports NOT_SERVING,
+      # e.g. during an outage of one of its dependencies.
+      livenessProbe:
+        exec:
+          command: ["grpcknock", "--addr", "127.0.0.1:50051",
+                    "--connect-timeout", "1s", "--timeout", "2s"]
+        initialDelaySeconds: 5
+        periodSeconds: 10
+        timeoutSeconds: 4

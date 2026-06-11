@@ -1,3 +1,10 @@
+//! gRPC health check probe for the command line.
+//!
+//! Calls `grpc.health.v1.Health/Check` (or streams `Watch`) on a target
+//! endpoint and reports the result through the process exit code.
+//! The CLI surface - flags, exit codes, output formats - is the contract;
+//! usage lives in the README.
+
 use std::process::ExitCode;
 
 use clap::Parser;
@@ -22,10 +29,21 @@ async fn main() -> ExitCode {
         err.exit();
     }
     let params = cli.probe_params();
-    // Metadata commonly carries credentials; warn when it would travel in the
-    // clear so a token is not leaked over a plaintext connection unnoticed.
-    if !params.metadata.is_empty() && !params.tls_mode.is_enabled() {
-        eprintln!("warning: metadata is sent over an unencrypted connection; add --tls");
+    // Metadata commonly carries credentials; warn when the channel cannot
+    // protect it so a token is not leaked unnoticed. NoVerify counts:
+    // an unauthenticated peer is no better than plaintext against a MITM.
+    if !params.metadata.is_empty() {
+        match params.tls_mode {
+            tls::TlsMode::Disabled => {
+                eprintln!("warning: metadata is sent over an unencrypted connection; add --tls");
+            }
+            tls::TlsMode::NoVerify => {
+                eprintln!(
+                    "warning: metadata is sent over an unverified TLS connection; the peer is not authenticated"
+                );
+            }
+            tls::TlsMode::SystemRoots | tls::TlsMode::CustomCa(_) => {}
+        }
     }
     let format = cli.output_format();
     let code = if cli.watch {
