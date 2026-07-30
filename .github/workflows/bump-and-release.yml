@@ -21,7 +21,11 @@ on:
         default: ""
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   checks:
@@ -30,109 +34,10 @@ jobs:
   bump:
     needs: checks
     runs-on: ubuntu-latest
-    outputs:
-      tag: ${{ steps.tag.outputs.tag }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: voidmason/bump-release@v1
         with:
-          # PAT so the bump commit can be pushed to protected master.
-          # GITHUB_TOKEN (github-actions[bot]) cannot bypass branch rules.
+          # PAT: a push with GITHUB_TOKEN would not trigger CI or the dependencies sync on the bump commit.
           token: ${{ secrets.RELEASE_TOKEN }}
-          # Keep the PAT out of .git/config for later steps; the push step
-          # passes it explicitly. fetch-depth 0 already brings every tag.
-          persist-credentials: false
-          fetch-depth: 0
-
-      - uses: Swatinem/rust-cache@v2
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-edit
-
-      - name: Configure git
-        run: |
-          git config user.name "nerjs"
-          git config user.email "nerjs.stap@gmail.com"
-
-      - name: Compute next version
-        id: ver
-        env:
-          ACTION: ${{ inputs.version }}
-        run: |
-          set -euo pipefail
-          ver() { cargo read-manifest | jq -r .version; }
-          PREV=$(ver)
-          # Version math is delegated to cargo set-version; bash only routes the action.
-          # `beta` covers both starting a patch pre-release and incrementing an existing
-          # one - set-version picks by current state, and updates Cargo.lock as it goes.
-          # --workspace also covers a lone package (a one-member workspace).
-          case "$ACTION" in
-            patch|minor|major) cargo set-version --workspace --bump "$ACTION" ;;
-            beta)              cargo set-version --workspace --bump beta ;;
-            beta-minor|beta-major)
-              # `--bump beta` always patches the base, so it cannot start a minor/major
-              # pre-release. set-version also refuses downgrades (0.2.0 -> 0.2.0-beta.1),
-              # ruling out "bump then suffix". Bump the target base ourselves and set the
-              # pre-release in one shot - always an upgrade from the current version.
-              base=${PREV%%-*}; IFS=. read -r maj min _ <<< "$base"
-              case "$ACTION" in
-                beta-minor) target="$maj.$((min+1)).0" ;;
-                beta-major) target="$((maj+1)).0.0" ;;
-              esac
-              cargo set-version --workspace "$target-beta.1" ;;
-            finalize)          cargo set-version --workspace --bump release ;;
-            *) echo "::error::unknown action: $ACTION"; exit 1 ;;
-          esac
-          NEXT=$(ver)
-          # `finalize` with no active pre-release is a no-op; an unchanged version would
-          # produce an empty commit below. Fail loud instead of releasing nothing.
-          if [ "$NEXT" = "$PREV" ]; then
-            echo "::error::version unchanged ($PREV): '$ACTION' is a no-op here"
-            exit 1
-          fi
-          echo "next=$NEXT" >> "$GITHUB_OUTPUT"
-
-      - name: Commit
-        env:
-          NEXT_VERSION: ${{ steps.ver.outputs.next }}
-          COMMIT_NOTE: ${{ inputs.commit_note }}
-        run: |
-          set -euo pipefail
-          MSG="Bump version to v${NEXT_VERSION}"
-          if [ -n "$COMMIT_NOTE" ]; then
-            MSG="${MSG}"$'\n\n'"${COMMIT_NOTE}"
-          fi
-          git add Cargo.toml Cargo.lock
-          git commit -m "$MSG"
-
-      - name: Tag and push
-        id: tag
-        env:
-          NEXT_VERSION: ${{ steps.ver.outputs.next }}
-          BRANCH: ${{ github.ref_name }}
-          REPO: ${{ github.repository }}
-          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-        run: |
-          set -euo pipefail
-          TAG="v${NEXT_VERSION}"
-          git tag -a "$TAG" -m "$TAG"
-          git push "https://x-access-token:${RELEASE_TOKEN}@github.com/${REPO}.git" "$BRANCH" --follow-tags
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-
-  release:
-    needs: bump
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ needs.bump.outputs.tag }}
-
-      - name: Create GitHub Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ needs.bump.outputs.tag }}
-        run: |
-          set -euo pipefail
-          FLAGS="--generate-notes"
-          # A pre-release tag carries a `-beta.N` suffix; mark the Release accordingly.
-          case "$TAG" in *-*) FLAGS="$FLAGS --prerelease" ;; esac
-          gh release create "$TAG" $FLAGS
+          version: ${{ inputs.version }}
+          commit_note: ${{ inputs.commit_note }}

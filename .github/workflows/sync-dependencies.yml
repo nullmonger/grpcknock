@@ -1,0 +1,25 @@
+name: "Sync: dependencies <- master"
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: sync-dependencies
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: voidmason/branch-sync@v1
+        with:
+          token: ${{ secrets.RELEASE_TOKEN }}
+          base: master
+          head: dependencies

@@ -8,7 +8,7 @@ readiness probes and Docker HEALTHCHECK lines.
 
 ## Installation
 
-From crates.io (requires Rust 1.94 or newer):
+From crates.io (requires Rust 1.88 or newer):
 
 ```
 cargo install --locked grpcknock

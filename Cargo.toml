@@ -2,14 +2,14 @@
 name = "grpcknock"
 version = "0.2.0"
 edition = "2024"
-rust-version = "1.94"
+rust-version = "1.88"
 description = "A small gRPC health check probe for containers and Kubernetes"
 repository = "https://github.com/nullmonger/grpcknock"
 license = "MIT OR Apache-2.0"
 readme = "README.md"
 keywords = ["grpc", "healthcheck", "cli", "kubernetes", "probe"]
 categories = ["command-line-utilities"]
-include = ["src/**", "README.md", "LICENSE"]
+include = ["src/**", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
 
 [dependencies]
 clap = { version = "4.6.1", features = ["derive"] }

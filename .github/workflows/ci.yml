@@ -3,10 +3,11 @@ name: CI
 on:
   workflow_dispatch:
   push:
-    branches: [master]
+    branches:
+      - master
   pull_request:
-    branches: [master]
-  merge_group:
+    branches:
+      - master
 
 permissions:
   contents: read
@@ -16,92 +17,13 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # fmt, clippy and build run on the dev toolchain, auto-installed by rustup
-  # from rust-toolchain.toml. Only the test matrix pins explicit versions.
-  fmt:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - run: cargo fmt --all --check
-
-  clippy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy --all-targets --all-features -- -D warnings
-
-  test:
-    needs: [fmt, clippy]
-    strategy:
-      fail-fast: false
-      matrix:
-        # Dev version (matches rust-toolchain.toml) plus the two below it.
-        # Raise this list and rust-toolchain.toml together by hand.
-        rust: ["stable", "beta", "1.95", "1.94"]
-        env:
-          - name: ubuntu
-            container: ""
-          - name: arch
-            container: "archlinux:latest"
-    name: test (${{ matrix.env.name }} / ${{ matrix.rust }})
-    runs-on: ubuntu-latest
-    # beta tracks the upcoming release; an upstream regression there must not
-    # block the merge queue. ci-success counts a continued job as success.
-    continue-on-error: ${{ matrix.rust == 'beta' }}
-    container: ${{ matrix.env.container }}
-    env:
-      RUSTUP_TOOLCHAIN: ${{ matrix.rust }}
-    steps:
-      - name: Prep (debian)
-        if: matrix.env.name == 'debian'
-        run: |
-          apt-get update
-          apt-get install -y --no-install-recommends \
-            git curl ca-certificates build-essential pkg-config libssl-dev
-
-      - name: Prep (arch)
-        if: matrix.env.name == 'arch'
-        run: |
-          pacman -Syu --noconfirm git curl base-devel openssl pkgconf
-
-      - uses: actions/checkout@v7
-
-      # Explicit per-version install: RUSTUP_TOOLCHAIN overrides
-      # rust-toolchain.toml, and the distro containers have no preinstalled Rust.
-      - uses: dtolnay/rust-toolchain@67ef31d5b988238dd797d409d6f9574278e20537 # master, pinned 2026-03-27
-        with:
-          toolchain: ${{ matrix.rust }}
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: ${{ matrix.env.name }}-${{ matrix.rust }}
-
-      - run: cargo test --all-features
+  checks:
+    uses: ./.github/workflows/checks.yml
 
   build:
-    needs: test
+    needs: checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release
-
-  # Single stable status check for branch protection / merge queue. Matrix job
-  # names shift when the version list changes; this gate name does not.
-  ci-success:
-    name: CI success
-    if: ${{ always() }}
-    needs: [fmt, clippy, test, build]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check job results
-        run: |
-          for r in "${{ needs.fmt.result }}" "${{ needs.clippy.result }}" \
-                   "${{ needs.test.result }}" "${{ needs.build.result }}"; do
-            case "$r" in
-              success | skipped) ;;
-              *) echo "required job result: $r"; exit 1 ;;
-            esac
-          done
-          echo "all required jobs succeeded or were skipped"
